@@ -4,3 +4,4 @@ matplotlib
 scipy
 streamlit
 pandas
+streamlit_cropperjs
