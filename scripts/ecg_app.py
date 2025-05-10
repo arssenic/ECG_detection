@@ -3,8 +3,7 @@ import numpy as np
 import cv2
 from PIL import Image as PILImage
 from io import BytesIO
-from streamlit_cropperjs import st_cropperjs
-import base64
+from streamlit_cropper import st_cropper
 import matplotlib.pyplot as plt
 import pandas as pd
 from signal_detection import ColorImage, adaptive
@@ -40,18 +39,10 @@ if uploaded_file:
         st.image(final_image, use_container_width=True)
 
     elif option == "Crop":
-        st.subheader("✂️ Draw rectangle to crop")
-        original_pil = PILImage.fromarray(final_image)
-        buffer = BytesIO()
-        original_pil.save(buffer, format="PNG")
-        buffer.seek(0)
-        cropped_pic = st_cropperjs(pic=buffer.read(), btn_text="Crop!", key="crop_only")
-
-        if cropped_pic:
-            image_data = base64.b64decode(cropped_pic.split(",")[1])
-            final_image = PILImage.open(BytesIO(image_data)).convert("RGB")
-            final_image = np.array(final_image)
-            st.image(final_image, output_format="PNG")
+        st.subheader("✂️ Crop Image")
+        cropped_img = st_cropper(PILImage.fromarray(final_image), realtime_update=True, box_color='#0000FF')
+        final_image = np.array(cropped_img)
+        st.image(final_image, use_container_width=True)
 
     elif option == "Rotate & Crop":
         st.subheader("Step 1️⃣: Rotate")
@@ -66,29 +57,17 @@ if uploaded_file:
             borderMode=cv2.BORDER_CONSTANT,
             borderValue=(255, 255, 255)
         )
-
         st.subheader("🔄 Rotated Image Preview")
         st.image(rotated, use_container_width=True)
 
-        rotated_pil = PILImage.fromarray(rotated)
-        buffer = BytesIO()
-        rotated_pil.save(buffer, format="PNG")
-        buffer.seek(0)
-
         st.subheader("Step 2️⃣: Crop Rotated Image")
-        cropped_pic = st_cropperjs(pic=buffer.read(), btn_text="Crop!", key=f"rotate_crop_{angle}")
-
-        if cropped_pic:
-            image_data = base64.b64decode(cropped_pic.split(",")[1])
-            final_image = PILImage.open(BytesIO(image_data)).convert("RGB")
-            final_image = np.array(final_image)
-            st.image(final_image, output_format="PNG")
-        else:
-            final_image = rotated
+        cropped_img = st_cropper(PILImage.fromarray(rotated), realtime_update=True, box_color='#0000FF')
+        final_image = np.array(cropped_img)
+        st.image(final_image, use_container_width=True)
 
     # Allow user to download the processed (rotated/cropped) image
     buffered = BytesIO()
-    result_pil = PILImage.fromarray(final_image) if isinstance(final_image, np.ndarray) else final_image
+    result_pil = PILImage.fromarray(final_image)
     result_pil.save(buffered, format="PNG")
     buffered.seek(0)
     st.download_button(
@@ -102,7 +81,6 @@ if uploaded_file:
     st.subheader("📈 Run Signal Detection and Extraction")
     if st.button("Detect & Extract Signal"):
         with st.spinner("Processing..."):
-            # --- Signal Detection ---
             color_img = ColorImage(cv2.cvtColor(final_image, cv2.COLOR_RGB2BGR))
             binary_output = adaptive(color_img)
             signal_mask = (binary_output.data * 255)
@@ -120,31 +98,22 @@ if uploaded_file:
                 mime="image/png"
             )
 
-            # --- Signal Extraction ---
             _, binary = cv2.threshold(signal_mask, 127, 1, cv2.THRESH_BINARY)
-
-            # Wrap it into a BinaryImage
             binary_image = BinaryImage(binary)
-
-            # Now call extractSignal
             signal = extractSignal(binary_image)
 
-            # Extract x and y values if signal is not None
             if signal is not None:
                 x = np.arange(len(signal))
                 y = -signal  # Flip vertically if needed
 
-                # Plotting the signal
                 fig, ax = plt.subplots(figsize=(20, 2.5))
                 ax.plot(x, y, color="blue")
                 ax.set_title("Extracted ECG Signal")
                 st.pyplot(fig)
 
-                # Download CSV
                 csv = pd.DataFrame({'Time': x, 'Amplitude': y}).to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Download Signal as CSV", csv, "ecg_signal.csv", "text/csv")
 
-                # Download Plot Image
                 plot_buf = BytesIO()
                 fig.savefig(plot_buf, format="png")
                 plot_buf.seek(0)
@@ -152,23 +121,17 @@ if uploaded_file:
 
                 st.subheader("🔍 Comparison: Cropped Image vs Extracted Signal")
 
-                # Resize both images to the same size (e.g., 600x200)
                 resize_width = 600
                 resize_height = 200
-
-                # Convert and resize cropped image
                 cropped_img_pil = PILImage.fromarray(final_image).resize((resize_width, resize_height))
 
-                # Generate extracted signal plot with border and limited y-axis scaling
                 fig2, ax2 = plt.subplots(figsize=(6, 2))
                 ax2.plot(x, y, color="purple", linewidth=2)
                 ax2.set_title("Extracted Signal", fontsize=12, weight='bold')
                 ax2.set_facecolor("white")
-
-                # Add visible border
                 for spine in ax2.spines.values():
                     spine.set_edgecolor('black')
-                    spine.set_linewidth(1.5) 
+                    spine.set_linewidth(1.5)
 
                 signal_plot_buf = BytesIO()
                 fig2.savefig(signal_plot_buf, format="png", bbox_inches="tight")
@@ -176,7 +139,6 @@ if uploaded_file:
                 signal_plot_buf.seek(0)
                 signal_plot_image = PILImage.open(signal_plot_buf).resize((resize_width, resize_height))
 
-                # Side-by-side display with fixed width and height
                 col1, col2 = st.columns(2)
                 with col1:
                     st.image(cropped_img_pil, caption="🖼️ Cropped ECG Image", use_container_width=False)
